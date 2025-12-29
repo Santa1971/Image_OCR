@@ -12,7 +12,9 @@
     "react-dom": "^19.2.3",
     "react": "^19.2.3",
     "@google/genai": "latest",
-    "tesseract.js": "5.1.0"
+    "tesseract.js": "5.1.0",
+    "react-cropper": "2.3.3",
+    "cropperjs": "1.5.13"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

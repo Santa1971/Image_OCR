@@ -7,7 +7,8 @@ import { MainWorkspace } from './components/MainWorkspace';
 import { RightSidebar } from './components/RightSidebar';
 import { SettingsPage } from './components/SettingsPage';
 import { JsonViewerModal } from './components/JsonViewerModal';
-import { OCRFile, MediaType, AnalysisMode, OCRBlock, AutoConfig, OCREngine, SystemInstructions } from './types';
+import { ImageEditorModal } from './components/ImageEditorModal';
+import { OCRFile, MediaType, AnalysisMode, OCRBlock, AutoConfig, OCREngine, SystemInstructions, AppTheme } from './types';
 
 // Define prompts centrally to reuse in auto-gen and manual-gen
 const STUDIO_PROMPTS: Record<string, string> = {
@@ -52,14 +53,26 @@ const App: React.FC = () => {
   const [imageOcrEnabled, setImageOcrEnabled] = useState(true);
   const [filter, setFilter] = useState('all');
   const [autoConfig, setAutoConfig] = useState<AutoConfig>(DEFAULT_AUTO_CONFIG);
+  const [theme, setTheme] = useState<AppTheme>('default');
   
   const [currentView, setCurrentView] = useState<'workspace' | 'settings'>('workspace');
+
+  // Mobile Sidebar States
+  const [leftSidebarOpen, setLeftSidebarOpen] = useState(false);
+  const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
 
   // JSON Viewer State
   const [isJsonViewerOpen, setIsJsonViewerOpen] = useState(false);
   const [jsonViewerData, setJsonViewerData] = useState<any>(null);
   const [jsonFileName, setJsonFileName] = useState('');
   const jsonInputRef = useRef<HTMLInputElement>(null);
+  
+  // Image Editor State
+  const [editingFileId, setEditingFileId] = useState<string | null>(null);
+  const [editorImageUrl, setEditorImageUrl] = useState('');
+
+  // Main Upload Input Ref for shortcut
+  const mainFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const storedKey = localStorage.getItem('gemini_api_key');
@@ -96,15 +109,48 @@ const App: React.FC = () => {
             setAutoConfig(JSON.parse(storedAuto));
         } catch(e) { console.error("Auto config parse error", e); }
     }
+
+    const storedTheme = localStorage.getItem('app_theme');
+    if (storedTheme) {
+        setTheme(storedTheme as AppTheme);
+    }
   }, []);
 
-  // Keyboard shortcut for deletion
+  // Apply Theme
+  useEffect(() => {
+    // Remove all theme classes first
+    document.documentElement.classList.remove('theme-midnight', 'theme-nature', 'theme-ocean', 'theme-sunset');
+    if (theme !== 'default') {
+        document.documentElement.classList.add(`theme-${theme}`);
+    }
+  }, [theme]);
+
+  // Keyboard shortcut listener
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
         // Ignore if typing in input/textarea
         const activeTag = document.activeElement?.tagName.toLowerCase();
         if (activeTag === 'input' || activeTag === 'textarea') return;
 
+        // Ctrl + O : Open File
+        if ((e.ctrlKey || e.metaKey) && e.key === 'o') {
+             e.preventDefault();
+             document.getElementById('hidden-app-file-input')?.click();
+        }
+
+        // Ctrl + Enter : Start Analysis
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+             e.preventDefault();
+             startBatchProcess();
+        }
+
+        // Ctrl + S : Download Word (current item)
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+             e.preventDefault();
+             handleDownloadWord();
+        }
+
+        // Delete : Delete selected item
         if (e.key === 'Delete' && selectedId && currentView === 'workspace') {
             if (items.find(i => i.id === selectedId)) {
                 if (confirm("선택한 파일을 삭제하시겠습니까?")) {
@@ -115,9 +161,9 @@ const App: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedId, items, currentView]); 
+  }, [selectedId, items, currentView, isProcessing]); 
 
-  const handleSaveSettings = (key: string, selectedModel: string, newAutoConfig: AutoConfig, selectedEngine: OCREngine, newPaddleUrl: string, newInstructions: SystemInstructions, newImageOcrEnabled: boolean) => {
+  const handleSaveSettings = (key: string, selectedModel: string, newAutoConfig: AutoConfig, selectedEngine: OCREngine, newPaddleUrl: string, newInstructions: SystemInstructions, newImageOcrEnabled: boolean, newTheme: AppTheme) => {
     const trimmedKey = key.trim();
     setApiKey(trimmedKey);
     if (trimmedKey) {
@@ -147,6 +193,9 @@ const App: React.FC = () => {
 
     setAutoConfig(newAutoConfig);
     localStorage.setItem('gemini_auto_config', JSON.stringify(newAutoConfig));
+
+    setTheme(newTheme);
+    localStorage.setItem('app_theme', newTheme);
   };
 
   const toggleView = () => {
@@ -201,6 +250,8 @@ const App: React.FC = () => {
     if (!selectedId && newItems.length > 0) {
         setSelectedId(newItems[0].id);
     }
+    // Auto open sidebar on upload if on mobile
+    setLeftSidebarOpen(true);
   };
 
   const deleteFiles = (ids: string[]) => {
@@ -221,20 +272,53 @@ const App: React.FC = () => {
           setItems(currentItems => {
              const newItems = currentItems.filter(item => !ids.includes(item.id));
              if (newItems.length > 0) {
-                 // Try to keep selection index or select previous
                  const oldIndex = currentItems.findIndex(i => i.id === selectedId);
                  const nextIndex = Math.min(Math.max(0, oldIndex), newItems.length - 1);
                  setSelectedId(newItems[nextIndex].id);
              } else {
                  setSelectedId(null);
              }
-             return newItems; // This return is technically for the setter callback if used incorrectly, but here we set state twice which is safe in batch
+             return newItems; 
           });
       }
   };
 
   const updateAnalysisMode = (id: string, mode: AnalysisMode) => {
       setItems(prev => prev.map(item => item.id === id ? { ...item, analysisMode: mode } : item));
+  };
+
+  // --- Image Editor Handlers ---
+
+  const handleOpenImageEditor = (id: string) => {
+      const item = items.find(i => i.id === id);
+      if (item && item.mediaType === 'image') {
+          setEditingFileId(id);
+          setEditorImageUrl(item.previewUrl);
+      }
+  };
+
+  const handleSaveEditedImage = (blob: Blob) => {
+      if (!editingFileId) return;
+
+      const newFile = new File([blob], "edited_image.png", { type: "image/png" });
+      const newUrl = URL.createObjectURL(newFile);
+
+      setItems(prev => prev.map(item => {
+          if (item.id === editingFileId) {
+              // Revoke old URL to avoid memory leak
+              URL.revokeObjectURL(item.previewUrl);
+              return {
+                  ...item,
+                  file: newFile,
+                  previewUrl: newUrl,
+                  status: 'idle', // Reset status so it can be processed again
+                  ocrData: [], // Clear previous OCR data
+                  textGemini: '',
+                  textCorrected: ''
+              };
+          }
+          return item;
+      }));
   };
 
   // Helper function for Studio Generation (Used by both Auto and Manual)
@@ -416,94 +500,117 @@ const App: React.FC = () => {
 
   const analyzeItem = async (item: OCRFile): Promise<Partial<OCRFile>> => {
       try {
-        if (!apiKey) throw new Error("API 키가 없습니다. 설정에서 키를 등록해주세요.");
-        
-        const base64Data = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-                const result = reader.result as string;
-                resolve(result.split(',')[1]);
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(item.file);
-        });
+        // AI Skip Logic
+        const hasApiKey = !!apiKey;
+        let geminiResponse: any = { text: "" };
+        let geminiError = "";
 
-        const ai = new GoogleGenAI({ apiKey });
-        const analysisModel = model;
+        if (hasApiKey) {
+            const base64Data = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const result = reader.result as string;
+                    resolve(result.split(',')[1]);
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(item.file);
+            });
 
-        let promptText = "";
-        let specificInstruction = "";
-        const koreanInstruction = "모든 결과 값은 반드시 **한국어(Korean)**로 번역/작성해야 합니다. JSON 값에는 유효한 문자열만 포함하세요.";
-        
-        const advancedOCRInstruction = `
-        당신은 미디어 분석 전문가입니다. 주어진 미디어를 분석하여 요청된 정보를 JSON 형식으로 반환하세요.
-        응답은 반드시 유효한 JSON 형식이어야 하며, 마크다운 포맷팅이나 추가 설명을 포함하지 마십시오.
-        모든 필드를 가능한 한 충실하게 채우세요. 특히 'summary'는 필수입니다.
-        `;
+            const ai = new GoogleGenAI({ apiKey });
+            const analysisModel = model;
 
-        if (item.mediaType === 'image') {
-            if (item.analysisMode === 'text') {
-                specificInstruction = customInstructions.ocr || DEFAULT_INSTRUCTIONS.ocr;
-            } else {
-                specificInstruction = customInstructions.image || DEFAULT_INSTRUCTIONS.image;
-            }
-        } else if (item.mediaType === 'audio') {
-            specificInstruction = customInstructions.audio || DEFAULT_INSTRUCTIONS.audio;
-        } else if (item.mediaType === 'video') {
-            specificInstruction = customInstructions.video || DEFAULT_INSTRUCTIONS.video;
-        }
-
-        const systemInstruction = `[기본 규칙]\n${advancedOCRInstruction}\n\n[한국어 지침]\n${koreanInstruction}\n\n[유형별 상세 지침]\n${specificInstruction}`;
-
-        if (item.mediaType === 'image') {
-            promptText = "이미지 분석 요청:\n";
-            promptText += `다음 필드를 포함하는 순수 JSON 객체를 반환하세요:\n`;
+            let promptText = "";
+            let specificInstruction = "";
+            const koreanInstruction = "모든 결과 값은 반드시 **한국어(Korean)**로 번역/작성해야 합니다. JSON 값에는 유효한 문자열만 포함하세요.";
             
-            if (imageOcrEnabled) {
-                promptText += `1. extractedText: 이미지 내 모든 텍스트 (없으면 "텍스트 없음")\n`;
-                promptText += `2. text_annotations: 이미지 내의 모든 텍스트 라인에 대한 정밀한 좌표. [{"text": "...", "box_2d": [y_min, x_min, y_max, x_max]}] (좌표 0-1000). 작은 텍스트도 놓치지 마세요.\n`;
-                promptText += `3. correctedText: 텍스트의 오타 수정 및 정제된 버전\n`;
-                promptText += `4. fontStyle: 폰트 스타일 (예: "sans-serif", "serif", "handwriting")\n`;
-            } else {
-                promptText += `1. labels: 이미지의 주요 객체나 개념에 대한 레이블 배열 (10개 이상)\n`;
-                promptText += `2. visual_analysis: 이미지의 구도, 색감, 조명 등에 대한 상세한 시각적 분석\n`;
-                promptText += `(OCR은 요청하지 않음. 이미지 내용 분석에 집중하세요)\n`;
-            }
-            
-            promptText += `5. summary: 이미지의 시각적 내용 및 상황에 대한 상세한 한국어 요약\n`;
-            promptText += `6. keywords: 핵심 키워드 배열 (5개 이상)\n`;
-            promptText += `7. metadata: { description, location, objects, colors, accuracy: "100점 만점 기준의 정확도 점수 (예: 98/100)", confidence: "신뢰도(0-100 숫자)", public_doc: { doc_number, sender, receiver, title, date } }\n`;
+            const advancedOCRInstruction = `
+            당신은 미디어 분석 전문가입니다. 주어진 미디어를 분석하여 요청된 정보를 JSON 형식으로 반환하세요.
+            응답은 반드시 유효한 JSON 형식이어야 하며, 마크다운 포맷팅이나 추가 설명을 포함하지 마십시오.
+            모든 필드를 가능한 한 충실하게 채우세요. 특히 'summary'는 필수입니다.
+            `;
 
-        } else if (item.mediaType === 'audio') {
-            promptText = "오디오 상세 분석 요청:\n";
-            promptText += `다음 필드를 포함하는 순수 JSON 객체를 반환하세요:\n`;
-            promptText += `1. correctedText: 전체 오디오 받아쓰기 (STT). 내용을 요약하지 말고 들리는 대로 전체를 전사하세요.\n`;
-            promptText += `2. summary: 오디오 내용 요약\n`;
-            promptText += `3. keywords: 핵심 키워드\n`;
-            promptText += `4. metadata: { description, location, accuracy: "100점 만점 기준의 정확도 점수 (예: 98/100)", confidence: "신뢰도(0-100 숫자)" }\n`;
-        } else if (item.mediaType === 'video') {
-            promptText = "비디오 상세 분석 요청:\n";
-            promptText += `다음 필드를 포함하는 순수 JSON 객체를 반환하세요:\n`;
-            promptText += `1. extractedText: 영상의 주요 장면 및 흐름 묘사\n`;
-            promptText += `2. correctedText: 음성 대사 또는 화면 자막 추출\n`;
-            promptText += `3. summary: 영상 줄거리 요약\n`;
-            promptText += `4. keywords: 핵심 키워드\n`;
-            promptText += `5. metadata: { description, objects, location, accuracy: "100점 만점 기준의 정확도 점수 (예: 98/100)", confidence: "신뢰도(0-100 숫자)" }\n`;
+            if (item.mediaType === 'image') {
+                if (item.analysisMode === 'text') {
+                    specificInstruction = customInstructions.ocr || DEFAULT_INSTRUCTIONS.ocr;
+                } else {
+                    specificInstruction = customInstructions.image || DEFAULT_INSTRUCTIONS.image;
+                }
+            } else if (item.mediaType === 'audio') {
+                specificInstruction = customInstructions.audio || DEFAULT_INSTRUCTIONS.audio;
+            } else if (item.mediaType === 'video') {
+                specificInstruction = customInstructions.video || DEFAULT_INSTRUCTIONS.video;
+            }
+
+            const systemInstruction = `[기본 규칙]\n${advancedOCRInstruction}\n\n[한국어 지침]\n${koreanInstruction}\n\n[유형별 상세 지침]\n${specificInstruction}`;
+
+            if (item.mediaType === 'image') {
+                promptText = "이미지 분석 요청:\n";
+                promptText += `다음 필드를 포함하는 순수 JSON 객체를 반환하세요:\n`;
+                
+                if (imageOcrEnabled) {
+                    promptText += `1. extractedText: 이미지 내 모든 텍스트 (없으면 "텍스트 없음")\n`;
+                    promptText += `2. text_annotations: 이미지 내의 모든 텍스트 라인에 대한 정밀한 좌표. [{"text": "...", "box_2d": [y_min, x_min, y_max, x_max]}] (좌표 0-1000). 작은 텍스트도 놓치지 마세요.\n`;
+                    promptText += `3. correctedText: 텍스트의 오타 수정 및 정제된 버전\n`;
+                    promptText += `4. fontStyle: 폰트 스타일 (예: "sans-serif", "serif", "handwriting")\n`;
+                } else {
+                    promptText += `1. labels: 이미지의 주요 객체나 개념에 대한 레이블 배열 (10개 이상)\n`;
+                    promptText += `2. visual_analysis: 이미지의 구도, 색감, 조명 등에 대한 상세한 시각적 분석\n`;
+                    promptText += `(OCR은 요청하지 않음. 이미지 내용 분석에 집중하세요)\n`;
+                }
+                
+                promptText += `5. summary: 이미지의 시각적 내용 및 상황에 대한 상세한 한국어 요약\n`;
+                promptText += `6. keywords: 핵심 키워드 배열 (5개 이상)\n`;
+                promptText += `7. metadata: { description, location, objects, colors, accuracy: "100점 만점 기준의 정확도 점수 (예: 98/100)", confidence: "신뢰도(0-100 숫자)", public_doc: { doc_number, sender, receiver, title, date } }\n`;
+
+            } else if (item.mediaType === 'audio') {
+                promptText = "오디오 상세 분석 요청:\n";
+                promptText += `다음 필드를 포함하는 순수 JSON 객체를 반환하세요:\n`;
+                promptText += `1. correctedText: 전체 오디오 받아쓰기 (STT). 내용을 요약하지 말고 들리는 대로 전체를 전사하세요.\n`;
+                promptText += `2. summary: 오디오 내용 요약\n`;
+                promptText += `3. keywords: 핵심 키워드\n`;
+                promptText += `4. metadata: { description, location, accuracy: "100점 만점 기준의 정확도 점수 (예: 98/100)", confidence: "신뢰도(0-100 숫자)" }\n`;
+            } else if (item.mediaType === 'video') {
+                promptText = "비디오 상세 분석 요청:\n";
+                promptText += `다음 필드를 포함하는 순수 JSON 객체를 반환하세요:\n`;
+                promptText += `1. extractedText: 영상의 주요 장면 및 흐름 묘사\n`;
+                promptText += `2. correctedText: 음성 대사 또는 화면 자막 추출\n`;
+                promptText += `3. summary: 영상 줄거리 요약\n`;
+                promptText += `4. keywords: 핵심 키워드\n`;
+                promptText += `5. metadata: { description, objects, location, accuracy: "100점 만점 기준의 정확도 점수 (예: 98/100)", confidence: "신뢰도(0-100 숫자)" }\n`;
+            }
+
+            try {
+                geminiResponse = await ai.models.generateContent({
+                    model: analysisModel,
+                    contents: {
+                        parts: [
+                            { inlineData: { data: base64Data, mimeType: item.file.type } },
+                            { text: promptText }
+                        ]
+                    },
+                    config: {
+                        systemInstruction: systemInstruction,
+                        responseMimeType: "application/json", 
+                    }
+                });
+            } catch (err: any) {
+                geminiError = err.message;
+                // If API limit or key error, proceed but mark as error text
+                if (err.message.includes("429") || err.message.includes("quota")) {
+                    geminiResponse = { text: JSON.stringify({ summary: "API 할당량 초과로 AI 분석 실패", metadata: {} }) };
+                } else {
+                     geminiResponse = { text: JSON.stringify({ summary: "AI 분석 오류: " + err.message, metadata: {} }) };
+                }
+            }
+        } else {
+            // No API Key - Skip Gemini but allow OCR
+            geminiResponse = { text: JSON.stringify({ 
+                summary: "API 키가 설정되지 않아 AI 분석을 건너뛰었습니다.", 
+                textGemini: "AI 분석 비활성화 상태",
+                keywords: [],
+                metadata: {} 
+            }) };
         }
-
-        const geminiPromise = ai.models.generateContent({
-            model: analysisModel,
-            contents: {
-                parts: [
-                    { inlineData: { data: base64Data, mimeType: item.file.type } },
-                    { text: promptText }
-                ]
-            },
-            config: {
-                systemInstruction: systemInstruction,
-                responseMimeType: "application/json", 
-            }
-        });
 
         // --- OCR ENGINE EXECUTION (Only if imageOcrEnabled is true) ---
         const ocrPromise = (async (): Promise<{tess: string, paddle: string}> => {
@@ -538,7 +645,8 @@ const App: React.FC = () => {
             return result;
         })();
 
-        const [geminiResponse, ocrResult] = await Promise.all([geminiPromise, ocrPromise]);
+        // Execute OCR regardless of API key presence
+        const ocrResult = await ocrPromise;
 
         const rawText = geminiResponse.text || "{}";
         let json: any = {};
@@ -600,6 +708,10 @@ const App: React.FC = () => {
         const autoResults: Record<string, string> = {};
 
         const runStudioTask = async (tabId: string, prompt: string) => {
+             if (!hasApiKey) {
+                 autoResults[tabId] = "API 키가 필요합니다.";
+                 return;
+             }
              try {
                  await new Promise(r => setTimeout(r, 500));
                  autoResults[tabId] = await fetchStudioResult(item, tabId, prompt, apiKey);
@@ -608,16 +720,18 @@ const App: React.FC = () => {
              }
         };
 
-        if (item.mediaType === 'image') {
-            if (autoConfig.sns) await runStudioTask('sns', STUDIO_PROMPTS.sns);
-            if (autoConfig.alt) await runStudioTask('alt', STUDIO_PROMPTS.alt);
-            if (autoConfig.json) await runStudioTask('json', STUDIO_PROMPTS.json);
-        } else if (item.mediaType === 'video') {
-            if (autoConfig.youtube) await runStudioTask('youtube', STUDIO_PROMPTS.youtube);
-            if (autoConfig.timeline) await runStudioTask('timeline', STUDIO_PROMPTS.timeline);
-        } else if (item.mediaType === 'audio') {
-            if (autoConfig.meeting) await runStudioTask('meeting', STUDIO_PROMPTS.meeting);
-            if (autoConfig.todo) await runStudioTask('todo', STUDIO_PROMPTS.todo);
+        if (hasApiKey) {
+            if (item.mediaType === 'image') {
+                if (autoConfig.sns) await runStudioTask('sns', STUDIO_PROMPTS.sns);
+                if (autoConfig.alt) await runStudioTask('alt', STUDIO_PROMPTS.alt);
+                if (autoConfig.json) await runStudioTask('json', STUDIO_PROMPTS.json);
+            } else if (item.mediaType === 'video') {
+                if (autoConfig.youtube) await runStudioTask('youtube', STUDIO_PROMPTS.youtube);
+                if (autoConfig.timeline) await runStudioTask('timeline', STUDIO_PROMPTS.timeline);
+            } else if (item.mediaType === 'audio') {
+                if (autoConfig.meeting) await runStudioTask('meeting', STUDIO_PROMPTS.meeting);
+                if (autoConfig.todo) await runStudioTask('todo', STUDIO_PROMPTS.todo);
+            }
         }
         
         const finalResult: Partial<OCRFile> = {
@@ -665,22 +779,6 @@ const App: React.FC = () => {
       } catch (e: any) {
           console.error(e);
           let errorMsg = e.message || "알 수 없는 오류가 발생했습니다.";
-          try {
-              const jsonStart = errorMsg.indexOf('{');
-              const jsonEnd = errorMsg.lastIndexOf('}');
-              if (jsonStart !== -1 && jsonEnd !== -1) {
-                  const jsonStr = errorMsg.substring(jsonStart, jsonEnd + 1);
-                  const parsed = JSON.parse(jsonStr);
-                  if (parsed.error && parsed.error.message) {
-                      errorMsg = parsed.error.message;
-                  }
-              }
-          } catch(err) { /* ignore parse error */ }
-
-          if (errorMsg.includes("429") || errorMsg.includes("quota") || errorMsg.includes("RESOURCE_EXHAUSTED")) {
-              errorMsg = "API 요청 한도가 초과되었습니다. (무료 플랜 제한). 잠시 후 다시 시도하거나, 설정에서 자동 생성을 끄고 진행하세요.";
-          }
-
           return {
               status: 'error',
               errorMsg: errorMsg
@@ -689,10 +787,25 @@ const App: React.FC = () => {
   };
 
   const startBatchProcess = async () => {
-    if (!apiKey) {
-        if(confirm("API 키가 없습니다. 설정으로 이동?")) setCurrentView('settings');
-        return;
+    // If no API key, check if we can proceed with just OCR (for images)
+    // For Video/Audio, we really need the API.
+    const hasApiKey = !!apiKey;
+    
+    // Check if there are non-image files selected
+    const hasNonImages = items.some(i => i.mediaType !== 'image');
+    
+    if (!hasApiKey && hasNonImages) {
+        if(confirm("API 키가 없습니다. 동영상/오디오 분석을 위해서는 키가 필요합니다. 설정으로 이동하시겠습니까?")) {
+            setCurrentView('settings');
+            return;
+        }
     }
+    
+    if (!hasApiKey && !hasNonImages) {
+        // Only images, warn that AI features will be off
+        // Optional: show toast or small warning
+    }
+
     if (isProcessing) return;
     
     setIsProcessing(true);
@@ -703,6 +816,10 @@ const App: React.FC = () => {
         setIsProcessing(false);
         return;
     }
+
+    // Mobile: Close sidebars to show progress
+    setLeftSidebarOpen(false);
+    setRightSidebarOpen(false);
 
     for (const item of itemsToProcess) {
         setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'processing' } : i));
@@ -727,15 +844,16 @@ const App: React.FC = () => {
 
   const exportCSV = () => {
     const BOM = '\uFEFF';
-    // Add Auto Generated Columns
-    const header = "파일명,타입,모드,상태,요약,키워드,정확도,신뢰도(점수),문서번호,발신,수신,제목,생산일자,분석내용(Raw),분석내용(Corrected),SNS홍보,대체텍스트,JSON결과,유튜브,타임라인,회의록,할일\n";
+    // Add Auto Generated Columns + Detailed Metadata from Report
+    const header = "파일명,타입,모드,상태,요약,키워드,인식객체,주요색상,장소,정확도,신뢰도(점수),문서번호,발신,수신,제목,생산부서,생산일자,분석내용(Raw),분석내용(Corrected),SNS홍보,대체텍스트,JSON결과,유튜브,타임라인,회의록,할일\n";
     
     const rows = items.map(item => {
-        const escape = (str: string) => (str || '').replace(/"/g, '""').replace(/\n/g, ' ');
-        const pub = item.metadata?.public_doc || {};
+        const escape = (str: string | undefined | null) => (str || '').replace(/"/g, '""').replace(/\n/g, ' ');
+        const meta = item.metadata || {};
+        const pub = meta.public_doc || {};
         const sr = item.studioResults || {};
         
-        return `"${escape(item.file.name)}","${item.mediaType}","${item.analysisMode}","${item.status}","${escape(item.summary)}","${escape(item.keywords?.join(', '))}","${escape(item.metadata?.accuracy || '')}","${item.metadata?.confidence || ''}","${escape(pub.doc_number || '')}","${escape(pub.sender || '')}","${escape(pub.receiver || '')}","${escape(pub.title || '')}","${escape(pub.date || '')}","${escape(item.textGemini)}","${escape(item.textCorrected)}","${escape(sr.sns)}","${escape(sr.alt)}","${escape(sr.json)}","${escape(sr.youtube)}","${escape(sr.timeline)}","${escape(sr.meeting)}","${escape(sr.todo)}"`
+        return `"${escape(item.file.name)}","${item.mediaType}","${item.analysisMode}","${item.status}","${escape(item.summary)}","${escape((item.keywords || []).join(', '))}","${escape((meta.objects || []).join(', '))}","${escape((meta.colors || []).join(', '))}","${escape(meta.location)}","${escape(meta.accuracy)}","${meta.confidence ?? ''}","${escape(pub.doc_number)}","${escape(pub.sender)}","${escape(pub.receiver)}","${escape(pub.title)}","${escape(pub.department)}","${escape(pub.date)}","${escape(item.textGemini)}","${escape(item.textCorrected)}","${escape(sr.sns)}","${escape(sr.alt)}","${escape(sr.json)}","${escape(sr.youtube)}","${escape(sr.timeline)}","${escape(sr.meeting)}","${escape(sr.todo)}"`
     }).join("\n");
     
     const blob = new Blob([BOM + header + rows], { type: 'text/csv;charset=utf-8;' });
@@ -853,22 +971,36 @@ const App: React.FC = () => {
   const selectedItem = items.find(i => i.id === selectedId);
 
   return (
-    <div className="flex flex-col h-full bg-surface-subtle">
+    <div className="flex flex-col h-full bg-surface-subtle transition-colors duration-300">
       <Header 
         onSettingsClick={toggleView}
         onClear={clearAll}
         onExport={exportCSV}
         onStartProcess={startBatchProcess}
         onImportJSON={handleOpenViewer} 
-        onDownloadWord={handleDownloadWord} // Pass the handler
+        onDownloadWord={handleDownloadWord} 
         isProcessing={isProcessing}
         hasItems={items.length > 0}
         hasFinishedItems={items.some(i => i.status === 'done')}
         filter={filter}
         setFilter={setFilter}
         currentView={currentView}
+        
+        onToggleLeftSidebar={() => setLeftSidebarOpen(!leftSidebarOpen)}
+        onToggleRightSidebar={() => setRightSidebarOpen(!rightSidebarOpen)}
       />
       
+      {/* Hidden file input for shortcut support */}
+      <input 
+        id="hidden-app-file-input"
+        type="file" 
+        multiple
+        accept="image/*,video/*,audio/*"
+        style={{ display: 'none' }}
+        onChange={(e) => processFiles(e.target.files)}
+        ref={mainFileInputRef}
+      />
+
       <input 
         type="file" 
         ref={jsonInputRef} 
@@ -885,26 +1017,38 @@ const App: React.FC = () => {
         onUploadClick={() => jsonInputRef.current?.click()}
       />
       
+      <ImageEditorModal
+        isOpen={!!editingFileId}
+        onClose={() => { setEditingFileId(null); setEditorImageUrl(''); }}
+        imageUrl={editorImageUrl}
+        onSave={handleSaveEditedImage}
+      />
+      
       <div className="flex flex-1 overflow-hidden relative flex-col md:flex-row">
         {currentView === 'workspace' ? (
             <>
                 <LeftSidebar 
                     items={filteredItems}
                     selectedId={selectedId}
-                    onSelect={setSelectedId}
+                    onSelect={(id) => { setSelectedId(id); setLeftSidebarOpen(false); }}
                     onUpload={processFiles}
                     onDelete={deleteFiles}
+                    isOpen={leftSidebarOpen}
+                    onClose={() => setLeftSidebarOpen(false)}
                 />
                 <MainWorkspace 
                     currentItem={selectedItem} 
                     onGenerate={generateAIContent}
                     onModeChange={updateAnalysisMode}
                     onStudioGenerate={generateStudioContent}
+                    onEditImage={handleOpenImageEditor}
                     currentOcrEngine={ocrEngine}
                 />
-                <div className="hidden lg:block h-full">
-                    <RightSidebar item={selectedItem} />
-                </div>
+                <RightSidebar 
+                    item={selectedItem} 
+                    isOpen={rightSidebarOpen}
+                    onClose={() => setRightSidebarOpen(false)}
+                />
             </>
         ) : (
             <div className="w-full h-full">
@@ -916,6 +1060,7 @@ const App: React.FC = () => {
                     currentPaddleUrl={paddleUrl}
                     currentInstructions={customInstructions}
                     currentImageOcrEnabled={imageOcrEnabled}
+                    currentTheme={theme}
                     onSave={handleSaveSettings}
                     onBack={() => setCurrentView('workspace')}
                 />

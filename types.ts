@@ -1,8 +1,10 @@
 
+
 export type ProcessStatus = 'idle' | 'processing' | 'done' | 'error';
 export type MediaType = 'image' | 'video' | 'audio';
 export type AnalysisMode = 'all' | 'text' | 'image'; 
 export type OCREngine = 'tesseract' | 'paddle';
+export type AppTheme = 'default' | 'midnight' | 'nature' | 'ocean' | 'sunset';
 
 export interface PublicDocMetadata {
   doc_number?: string;
@@ -60,6 +62,14 @@ export interface SystemInstructions {
     image: string;
     audio: string;
     video: string;
+}
+
+export interface PromptTemplate {
+    id: string;
+    category: keyof SystemInstructions;
+    label: string;
+    content: string;
+    created_at?: string;
 }
 
 export interface OCRFile {
