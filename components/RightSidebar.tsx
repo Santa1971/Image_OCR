@@ -1,0 +1,257 @@
+import React, { useState, useEffect } from 'react';
+import { OCRFile } from '../types';
+
+interface RightSidebarProps {
+  item: OCRFile | undefined;
+}
+
+export const RightSidebar: React.FC<RightSidebarProps> = ({ item }) => {
+  const [elapsed, setElapsed] = useState(0);
+
+  // Timer logic for processing state
+  useEffect(() => {
+    let interval: any;
+    if (item?.status === 'processing') {
+        interval = setInterval(() => {
+            setElapsed(prev => prev + 1);
+        }, 1000);
+    } else {
+        setElapsed(0);
+    }
+    return () => clearInterval(interval);
+  }, [item?.status, item?.id]); // Reset when item changes or status changes
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    alert("복사되었습니다!");
+  };
+
+  const displayText = item ? (item.textCorrected || item.textGemini || item.textTesseract || "") : "";
+
+  const getConfidenceColor = (score: number) => {
+      if (score >= 90) return 'bg-success text-success-text';
+      if (score >= 70) return 'bg-primary text-primary-text';
+      if (score >= 50) return 'bg-yellow-500 text-yellow-900';
+      return 'bg-error text-error-text';
+  };
+
+  const getConfidenceBg = (score: number) => {
+      if (score >= 90) return 'bg-success';
+      if (score >= 70) return 'bg-primary';
+      if (score >= 50) return 'bg-yellow-500';
+      return 'bg-error';
+  };
+
+  return (
+    <aside className="w-80 bg-surface border-l border-border flex flex-col shrink-0 z-20 overflow-y-auto shadow-[-5px_0_20px_rgba(0,0,0,0.02)] h-full">
+      {/* Header */}
+      <div className="px-5 py-4 border-b border-border flex justify-between items-center bg-surface/90 sticky top-0 z-10 backdrop-blur-md">
+        <h3 className="text-text-main font-bold text-sm uppercase tracking-wide">분석 리포트</h3>
+      </div>
+
+      {/* Content */}
+      {!item || item.status === 'idle' ? (
+           <div className="p-5 text-center mt-10 opacity-50">
+               <span className="material-symbols-outlined text-4xl mb-2">analytics</span>
+               <p className="text-xs">분석 결과가 여기에 표시됩니다.</p>
+           </div>
+      ) : item.status === 'processing' ? (
+           <div className="p-5 text-center mt-10">
+               <div className="relative inline-block">
+                   <span className="material-symbols-outlined text-4xl mb-2 text-primary animate-spin">smart_toy</span>
+               </div>
+               <p className="text-sm font-bold text-text-main">AI 분석 중...</p>
+               <p className="text-xs text-text-muted mt-1 mb-2">
+                   {item.mediaType === 'image' ? '이미지 및 텍스트 분석' : item.mediaType === 'audio' ? '음성 인식 및 요약' : '영상 프레임 분석'} 중
+               </p>
+               <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-surface-subtle border border-border rounded-full text-xs font-mono text-primary font-bold">
+                   <span className="material-symbols-outlined text-sm">timer</span>
+                   <span>{elapsed}s</span>
+               </div>
+           </div>
+      ) : item.status === 'error' ? (
+           <div className="p-5 text-center mt-10">
+               <span className="material-symbols-outlined text-4xl mb-2 text-error">error</span>
+               <p className="text-sm font-bold text-error">분석 실패</p>
+               <p className="text-xs text-text-muted mt-2 p-2 bg-surface-hover rounded text-left break-words whitespace-pre-wrap">{item.errorMsg}</p>
+           </div>
+      ) : (
+          <>
+            {/* Metadata Summary */}
+            <div className="p-5 border-b border-border bg-surface-subtle/30">
+                <div className="flex justify-between text-[10px] text-text-muted mb-2 font-mono uppercase font-semibold">
+                <span>핵심 요약</span>
+                </div>
+                <div className="bg-white p-3 rounded-lg border border-border shadow-sm text-xs leading-relaxed text-text-main font-medium">
+                    {item.summary || "요약 내용이 없습니다."}
+                </div>
+                
+                {/* Accuracy & Confidence Section */}
+                {(item.metadata?.accuracy || item.metadata?.confidence !== undefined) && (
+                    <div className="mt-3 bg-white p-3 rounded-lg border border-border shadow-sm">
+                         <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-1.5">
+                                <span className="material-symbols-outlined text-sm text-blue-600">verified</span>
+                                <span className="text-[10px] font-bold text-text-secondary uppercase">분석 정확도</span>
+                            </div>
+                            {item.metadata.confidence !== undefined && (
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${getConfidenceColor(item.metadata.confidence)} bg-opacity-20`}>
+                                    {item.metadata.confidence}점
+                                </span>
+                            )}
+                         </div>
+                         
+                         {/* Confidence Bar */}
+                         {item.metadata.confidence !== undefined && (
+                             <div className="w-full h-1.5 bg-gray-100 rounded-full mb-2 overflow-hidden">
+                                 <div 
+                                    className={`h-full rounded-full transition-all duration-1000 ${getConfidenceBg(item.metadata.confidence)}`} 
+                                    style={{ width: `${item.metadata.confidence}%` }}
+                                 ></div>
+                             </div>
+                         )}
+
+                         {item.metadata.accuracy && (
+                             <p className="text-xs text-text-main leading-relaxed pt-1 border-t border-border/50 mt-1">
+                                 {item.metadata.accuracy}
+                             </p>
+                         )}
+                    </div>
+                )}
+            </div>
+
+            {/* Public Document Info (New) */}
+            {item.metadata?.public_doc && Object.keys(item.metadata.public_doc).length > 0 && Object.values(item.metadata.public_doc).some(v => v) && (
+                <div className="px-5 py-4 border-b border-border">
+                    <h4 className="text-xs font-bold text-text-secondary mb-3 flex items-center gap-1">
+                        <span className="material-symbols-outlined text-sm">article</span> 공공기관 문서 정보
+                    </h4>
+                    <div className="flex flex-col gap-2">
+                        {item.metadata.public_doc.doc_number && (
+                            <div className="flex flex-col">
+                                <span className="text-[9px] text-text-muted font-bold">문서번호</span>
+                                <span className="text-xs text-text-main bg-white border border-border p-1.5 rounded">{item.metadata.public_doc.doc_number}</span>
+                            </div>
+                        )}
+                        {item.metadata.public_doc.title && (
+                             <div className="flex flex-col">
+                                <span className="text-[9px] text-text-muted font-bold">제목</span>
+                                <span className="text-xs text-text-main bg-white border border-border p-1.5 rounded font-medium">{item.metadata.public_doc.title}</span>
+                            </div>
+                        )}
+                        <div className="grid grid-cols-2 gap-2">
+                            {item.metadata.public_doc.sender && (
+                                <div className="flex flex-col">
+                                    <span className="text-[9px] text-text-muted font-bold">발신</span>
+                                    <span className="text-xs text-text-main bg-white border border-border p-1.5 rounded">{item.metadata.public_doc.sender}</span>
+                                </div>
+                            )}
+                             {item.metadata.public_doc.receiver && (
+                                <div className="flex flex-col">
+                                    <span className="text-[9px] text-text-muted font-bold">수신</span>
+                                    <span className="text-xs text-text-main bg-white border border-border p-1.5 rounded">{item.metadata.public_doc.receiver}</span>
+                                </div>
+                            )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                            {item.metadata.public_doc.department && (
+                                <div className="flex flex-col">
+                                    <span className="text-[9px] text-text-muted font-bold">생산부서</span>
+                                    <span className="text-xs text-text-main bg-white border border-border p-1.5 rounded">{item.metadata.public_doc.department}</span>
+                                </div>
+                            )}
+                             {item.metadata.public_doc.date && (
+                                <div className="flex flex-col">
+                                    <span className="text-[9px] text-text-muted font-bold">생산일자</span>
+                                    <span className="text-xs text-text-main bg-white border border-border p-1.5 rounded">{item.metadata.public_doc.date}</span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Colors (Images only) */}
+            {item.metadata?.colors && item.metadata.colors.length > 0 && (
+                <div className="px-5 py-4 border-b border-border">
+                    <h4 className="text-xs font-bold text-text-secondary mb-2 flex items-center gap-1">
+                        <span className="material-symbols-outlined text-sm">palette</span> 주요 색상
+                    </h4>
+                    <div className="flex gap-2 flex-wrap">
+                        {item.metadata.colors.map((color, i) => (
+                            <div key={i} className="flex flex-col items-center gap-1">
+                                <div className="size-8 rounded-full border border-black/10 shadow-sm" style={{ backgroundColor: color }}></div>
+                                <span className="text-[9px] font-mono text-text-muted">{color}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            <div className="flex flex-col p-4 gap-3 pb-20">
+                {/* Keywords */}
+                <details className="flex flex-col rounded-xl bg-white border border-border shadow-sm group overflow-hidden" open>
+                    <summary className="flex cursor-pointer items-center justify-between px-4 py-3 select-none bg-surface hover:bg-surface-hover transition-colors">
+                        <div className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-text-secondary text-lg">sell</span>
+                        <p className="text-text-main text-xs font-bold leading-normal">키워드 / 태그</p>
+                        </div>
+                        <span className="material-symbols-outlined text-text-muted group-open:rotate-180 transition-transform text-lg">expand_more</span>
+                    </summary>
+                    <div className="px-4 pb-5 pt-2 border-t border-border/50">
+                        <div className="flex flex-wrap gap-2">
+                            {item.keywords?.map((k, i) => (
+                                <span key={i} className="text-[10px] font-bold text-primary-text bg-primary-light px-2 py-1 rounded-md border border-primary/10">
+                                    #{k}
+                                </span>
+                            ))}
+                            {item.metadata?.objects?.map((obj, i) => (
+                                <span key={`obj-${i}`} className="text-[10px] font-bold text-text-secondary bg-surface-subtle px-2 py-1 rounded-md border border-border">
+                                    {obj}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+                </details>
+
+                {/* Location Info */}
+                {item.metadata?.location && (
+                    <div className="bg-white border border-border rounded-xl p-3 flex items-start gap-3">
+                         <div className="bg-red-50 p-1.5 rounded-full text-red-500 shrink-0">
+                            <span className="material-symbols-outlined text-lg">place</span>
+                         </div>
+                         <div>
+                             <h4 className="text-[10px] font-bold text-text-muted uppercase">장소 정보</h4>
+                             <p className="text-xs text-text-main font-medium mt-0.5">{item.metadata.location}</p>
+                         </div>
+                    </div>
+                )}
+
+                {/* Raw Data Accordion */}
+                <details className="flex flex-col rounded-xl bg-white border border-border shadow-sm group overflow-hidden">
+                    <summary className="flex cursor-pointer items-center justify-between px-4 py-3 select-none bg-surface hover:bg-surface-hover transition-colors">
+                        <div className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-text-secondary text-lg">data_object</span>
+                        <p className="text-text-main text-xs font-bold leading-normal">전체 데이터 텍스트</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button onClick={(e) => {e.preventDefault(); copyToClipboard(displayText)}} className="text-text-muted hover:text-primary transition-colors">
+                                <span className="material-symbols-outlined text-lg">content_copy</span>
+                            </button>
+                            <span className="material-symbols-outlined text-text-muted group-open:rotate-180 transition-transform text-lg">expand_more</span>
+                        </div>
+                    </summary>
+                    <div className="px-0 pb-0 pt-0 border-t border-border/50 bg-surface-subtle">
+                        <textarea 
+                            readOnly 
+                            value={displayText} 
+                            className="w-full h-40 p-4 bg-transparent border-none text-[10px] font-mono text-text-secondary resize-none focus:ring-0 leading-relaxed"
+                        ></textarea>
+                    </div>
+                </details>
+            </div>
+          </>
+      )}
+    </aside>
+  );
+};

@@ -1,0 +1,185 @@
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>AI OCR 프로 - 엔진 비교 분석</title>
+    <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script id="tailwind-config">
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        surface: {
+                            DEFAULT: "#ffffff",
+                            subtle: "#f8fafc", // Slate 50
+                            canvas: "#f1f5f9", // Slate 100
+                            hover: "#f3f4f6",
+                        },
+                        border: {
+                            DEFAULT: "#e2e8f0", // Slate 200
+                            active: "#cbd5e1"
+                        },
+                        primary: {
+                            DEFAULT: "#4f46e5", // Indigo 600
+                            hover: "#4338ca",
+                            light: "#eef2ff", // Indigo 50
+                            text: "#3730a3"
+                        },
+                        text: {
+                            main: "#1e293b", // Slate 800
+                            secondary: "#64748b", // Slate 500
+                            muted: "#94a3b8"
+                        },
+                        success: {
+                            DEFAULT: "#10b981",
+                            light: "#d1fae5",
+                            text: "#065f46"
+                        },
+                        error: {
+                            DEFAULT: "#ef4444",
+                            light: "#fee2e2",
+                            text: "#991b1b"
+                        }
+                    },
+                    fontFamily: {
+                        display: "Public Sans, sans-serif"
+                    },
+                    boxShadow: {
+                        'lux': '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)',
+                        'floating': '0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.025)'
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'fade-in': 'fadeIn 0.5s ease-out',
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0', transform: 'translateY(10px)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' },
+                        }
+                    }
+                }
+            }
+        };
+    </script>
+    <style>
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+        /* Custom range slider from design */
+        input[type=range] {
+            -webkit-appearance: none; 
+            background: transparent; 
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #4f46e5;
+            margin-top: -6px;
+            cursor: pointer;
+            box-shadow: 0 0 0 2px #ffffff, 0 2px 4px rgba(0,0,0,0.1);
+            transition: transform 0.1s;
+        }
+        input[type=range]::-webkit-slider-thumb:hover {
+            transform: scale(1.1);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #e2e8f0;
+            border-radius: 2px;
+        }
+        details > summary {
+            list-style: none;
+        }
+        details > summary::-webkit-details-marker {
+            display: none;
+        }
+        
+        /* Print Styles for Document Viewer */
+        @media print {
+            body {
+                background: white;
+                height: auto;
+                overflow: visible !important;
+            }
+            
+            /* Hide everything by default */
+            body * {
+                visibility: hidden;
+            }
+
+            /* But show the print area and its children */
+            #print-area, #print-area * {
+                visibility: visible;
+            }
+            
+            /* Root needs to be visible for React to render children, 
+               but we hide its direct children via visibility hidden above, 
+               except print-area which overrides it */
+            #root {
+                display: block !important;
+                visibility: visible !important;
+            }
+
+            /* Position print area at absolute top */
+            #print-area {
+                position: absolute !important;
+                left: 0;
+                top: 0;
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                background: white !important;
+                box-shadow: none !important;
+                border: none !important;
+                background-image: none !important;
+            }
+
+            @page {
+                size: A4;
+                margin: 20mm;
+            }
+            
+            /* Explicitly hide UI elements to be safe */
+            button, input, textarea, header, aside, .no-print {
+                display: none !important;
+            }
+        }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "@google/genai": "https://esm.sh/@google/genai",
+    "tesseract.js": "https://esm.sh/tesseract.js@5.1.0"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+<body class="bg-surface-subtle font-display text-text-main h-screen overflow-hidden flex flex-col selection:bg-primary-light selection:text-primary-text">
+    <div id="root" class="flex flex-col h-full w-full"></div>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>
