@@ -45,7 +45,7 @@ const App: React.FC = () => {
   
   // Settings State
   const [apiKey, setApiKey] = useState('');
-  const [model, setModel] = useState('gemini-2.0-flash'); 
+  const [model, setModel] = useState('gemini-1.5-flash'); 
   const [ocrEngine, setOcrEngine] = useState<OCREngine>('tesseract');
   const [paddleUrl, setPaddleUrl] = useState('http://localhost:8000/ocr');
   const [customInstructions, setCustomInstructions] = useState<SystemInstructions>(DEFAULT_INSTRUCTIONS);
