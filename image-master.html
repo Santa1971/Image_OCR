@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ARMS Image Master - 기록물 진본성 확보 및 마이크로필름 최적화</title>
+    <style>
+        /* [UI/UX] 테마 변수 */
+        :root {
+            --primary: #5AC703; --bg: #f5f5f5; --panel: #ffffff;
+            --text: #333333; --text-sub: #666666; --border: #e0e0e0;
+            --nav-h: 60px;
+        }
+        [data-theme="dark"] {
+            --primary: #bb86fc; --bg: #121212; --panel: #1e1e1e;
+            --text: #e0e0e0; --text-sub: #a0a0a0; --border: #333333;
+        }
+        [data-theme="nordic"] { --primary: #0077b6; --bg: #f0f4f8; --panel: #ffffff; --text: #2b2d42; --border: #dbe2ef; }
+        [data-theme="latte"] { --primary: #ddb892; --bg: #fdfbf7; --panel: #ffffff; --text: #604a3e; --border: #e6ccb2; }
+        [data-theme="cyber"] { --primary: #00ff41; --bg: #000000; --panel: #0d0d0d; --text: #00ff41; --border: #333333; }
+
+        * { box-sizing: border-box; outline: none; -webkit-tap-highlight-color: transparent; }
+        body { margin: 0; font-family: 'Segoe UI', 'Noto Sans KR', sans-serif; background: var(--bg); color: var(--text); height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; font-size: 13px; }
+
+        /* 공통 UI */
+        .btn { border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
+        .btn-primary { background: var(--primary); color: #fff; filter: brightness(1.05); }
+        .btn-glass { background: rgba(128,128,128,0.15); color: var(--text); }
+        .btn-danger { background: #dc3545; color: white; }
+        .icon { width: 18px; height: 18px; stroke: currentColor; stroke-width: 2; fill: none; }
+        .form-control { width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text); font-size: 13px; }
+
+        /* 레이아웃 */
+        header { background: var(--panel); border-bottom: 1px solid var(--border); height: 60px; display: flex; align-items: center; justify-content: space-between; padding: 0 15px; flex-shrink: 0; }
+        main { flex: 1; display: flex; overflow: hidden; position: relative; }
+        .panel-left { width: 300px; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+        .panel-center { flex: 1; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; position: relative; }
+        .panel-right { width: 340px; background: var(--panel); border-left: 1px solid var(--border); display: flex; flex-direction: column; }
+        .mobile-nav { display: none; height: var(--nav-h); background: var(--panel); border-top: 1px solid var(--border); flex-shrink: 0; justify-content: space-around; align-items: center; z-index: 100; }
+        .nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-sub); font-size: 10px; gap: 4px; cursor: pointer; }
+        .nav-item.active { color: var(--primary); font-weight: bold; background: rgba(128,128,128,0.05); }
+        .nav-item svg { width: 20px; height: 20px; }
+
+        /* 파일 리스트 & 탭 */
+        .file-list { flex: 1; overflow-y: auto; }
+        .file-item { padding: 12px 10px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: var(--panel); }
+        .file-item.selected { background: rgba(128,128,128,0.1); border-left: 4px solid var(--primary); }
+        .badge { padding: 3px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; color: white; }
+        .st-normal { background: #198754; } .st-changed { background: #dc3545; }
+
+        /* 캔버스 */
+        .canvas-wrap { box-shadow: 0 5px 15px rgba(0,0,0,0.2); border: 1px solid var(--border); background: #fff; max-width: 100%; max-height: 100%; display: flex; }
+        canvas { max-width: 100%; max-height: calc(100vh - 140px); object-fit: contain; }
+        .preview-msg { position: absolute; bottom: 20px; left: 20px; background: rgba(0,0,0,0.6); color: white; padding: 6px 10px; border-radius: 4px; pointer-events: none; font-size: 11px; }
+
+        /* 탭 및 설정 */
+        .tabs { display: flex; border-bottom: 1px solid var(--border); height: 45px; }
+        .tab-btn { flex: 1; display: flex; align-items: center; justify-content: center; cursor: pointer; border-bottom: 3px solid transparent; color: var(--text-sub); font-weight: 600; }
+        .tab-btn.active { border-bottom-color: var(--primary); color: var(--primary); background: rgba(128,128,128,0.05); }
+        .tab-content { flex: 1; overflow-y: auto; padding: 15px; display: none; }
+        .tab-content.active { display: block; }
+        .form-group { margin-bottom: 15px; }
+        .form-label { display: block; font-size: 11px; font-weight: 600; color: var(--text-sub); margin-bottom: 5px; }
+        .range-wrap { display: flex; align-items: center; gap: 8px; }
+        input[type="range"] { flex: 1; accent-color: var(--primary); height: 4px; }
+        .text-config-box { border: 1px solid var(--border); border-radius: 6px; padding: 10px; margin-bottom: 10px; background: rgba(128,128,128,0.05); }
+        .coord-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+
+        /* 📱 모바일 반응형 */
+        @media (max-width: 768px) {
+            header h1 span { display: none; }
+            main { flex: 1; position: relative; }
+            .panel-left, .panel-center, .panel-right { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none; display: none; z-index: 10; }
+            .panel-left.mobile-active, .panel-center.mobile-active, .panel-right.mobile-active { display: flex; }
+            .mobile-nav { display: flex; }
+            canvas { max-height: calc(100dvh - 180px); }
+        }
+
+        /* 로딩 */
+        .overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.5); z-index: 9999; display: none; justify-content: center; align-items: center; color: white; flex-direction: column; }
+        .spinner { width: 40px; height: 40px; border: 4px solid #fff; border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+<header>
+    <div style="display:flex; align-items:center; gap:12px;">
+        <a href="/" style="display:flex; align-items:center; justify-content:center; width:32px; height:32px; background:rgba(128,128,128,0.1); border-radius:8px; color:var(--text); text-decoration:none;">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M19 12H5"/><polyline points="12 19 5 12 12 5"/></svg>
+        </a>
+        <h1 style="font-size:16px; margin:0; display:flex; flex-direction:column; justify-content:center;">
+            <div style="font-weight:900;">ARMS Image Master</div>
+            <div style="font-size:10px; font-weight:400; color:var(--text-sub);">기록물 보존매체 수록용 전처리 도구</div>
+        </h1>
+    </div>
+    <div style="display:flex; gap:8px;">
+        <select id="themeSelect" class="form-control" style="width:auto;" onchange="app.setTheme(this.value)">
+            <option value="naver">Green</option><option value="dark">Dark</option><option value="nordic">Blue</option><option value="latte">Latte</option><option value="cyber">Cyber</option>
+        </select>
+        <button class="btn btn-primary" onclick="document.getElementById('folderInput').click()">폴더 열기</button>
+    </div>
+    <input type="file" id="folderInput" webkitdirectory multiple style="display:none" onchange="app.handleFiles(this.files)">
+</header>
+
+<main>
+    <div class="panel-left mobile-active" id="view-list">
+        <div style="padding:12px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+            <span id="fileCount" style="font-weight:bold;">파일 0개</span>
+            <button class="btn btn-glass" onclick="app.clearAll()">초기화</button>
+        </div>
+        <div class="file-list" id="fileListArea">
+            <div style="padding:30px; text-align:center; color:var(--text-sub); line-height:1.6;">
+                <svg class="icon" style="width:40px; height:40px; opacity:0.3; margin-bottom:10px;" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg><br>
+                상단 '폴더 열기'를 눌러<br>기록물 이미지를 불러오세요.<br><br>
+                <span style="font-size:11px; background:rgba(255,193,7,0.2); padding:4px 8px; border-radius:4px; color:#d68b00;">* PC 환경 권장 (폴더 처리)</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel-center" id="view-preview">
+        <div class="canvas-wrap">
+            <canvas id="previewCanvas"></canvas>
+        </div>
+        <div class="preview-msg" id="previewInfo">이미지를 선택하여 메타데이터 스탬핑 확인</div>
+        <button class="btn btn-primary" style="position:absolute; top:20px; right:20px; box-shadow:0 2px 10px rgba(0,0,0,0.2);" onclick="app.saveCurrentPreview()">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            현재 컷 저장
+        </button>
+    </div>
+
+    <div class="panel-right" id="view-settings">
+        <div class="tabs">
+            <div class="tab-btn active" onclick="app.switchSettingTab('convert')">변환/워터마크</div>
+            <div class="tab-btn" onclick="app.switchSettingTab('integrity')">진본성 검증</div>
+        </div>
+
+        <div id="tab-convert" class="tab-content active">
+            <div style="margin-bottom:15px; padding:10px; background:rgba(0,123,255,0.05); border:1px solid rgba(0,123,255,0.1); border-radius:6px;">
+                <h4 style="margin:0 0 5px 0; font-size:12px; color:var(--primary);">마이크로필름 수록 요건 충족</h4>
+                <p style="margin:0; font-size:11px; color:var(--text-sub);">
+                    기록물의 맥락 정보(파일명, 일자 등)를 이미지 여백에 영구적으로 각인하여, 필름 변환 시 법적 증거 능력을 확보합니다.
+                </p>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">출력 규격 (용지/DPI/회전)</label>
+                <div style="display:flex; gap:5px; margin-bottom:8px;">
+                    <select id="cfg_paper" class="form-control" onchange="app.updatePreview()"><option value="A4">A4 (표준)</option><option value="A3">A3 (도면용)</option><option value="B4">B4</option></select>
+                    <select id="cfg_dpi_select" class="form-control" onchange="app.toggleCustomDPI(); app.updatePreview()"><option value="150">150 dpi</option><option value="300" selected>300 dpi (보존용)</option><option value="600">600 dpi</option><option value="custom">직접입력</option></select>
+                    <button class="btn btn-glass" style="padding:8px;" onclick="app.rotate(90)" title="90도 회전">↻</button>
+                </div>
+                <input type="number" id="cfg_dpi_custom" class="form-control" style="display:none;" value="300" placeholder="DPI" oninput="app.updatePreview()">
+            </div>
+
+            <div class="form-group" style="background:rgba(128,128,128,0.05); padding:10px; border-radius:6px; border:1px solid var(--border);">
+                <label class="form-label" style="color:var(--primary);">보존용 이미지 최적화</label>
+                
+                <div class="range-wrap" style="margin-bottom:8px;">
+                    <span style="font-size:10px; width:45px;">크기(%)</span>
+                    <input type="range" id="cfg_img_scale" min="10" max="150" value="95" oninput="app.updatePreview()">
+                    <span id="val_img_scale" style="font-size:10px; width:30px; text-align:right;">95%</span>
+                </div>
+                
+                <div style="display:flex; gap:5px;">
+                    <select id="cfg_align_h" class="form-control" onchange="app.updatePreview()">
+                        <option value="center">가로: 중앙 정렬</option>
+                        <option value="left">가로: 왼쪽 정렬</option>
+                        <option value="right">가로: 오른쪽 정렬</option>
+                    </select>
+                    <select id="cfg_align_v" class="form-control" onchange="app.updatePreview()">
+                        <option value="middle">세로: 중앙 정렬</option>
+                        <option value="top">세로: 상단 정렬</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">메타데이터 스탬핑 (진본성 확보)</label>
+                <div class="range-wrap" style="margin-bottom:10px;">
+                    <span style="font-size:11px;">하단 여백 확보</span>
+                    <input type="range" id="cfg_padBot" min="0" max="40" value="10" oninput="app.updatePreview()">
+                    <span id="val_padBot" style="font-size:11px; width:35px; text-align:right;">10%</span>
+                </div>
+                
+                <div class="text-config-box">
+                    <div class="text-config-header" style="color:var(--primary); font-weight:bold; margin-bottom:5px;">[좌측] 문서 고유번호</div>
+                    <select id="cfg_txt_L_type" class="form-control" onchange="app.updatePreview()"><option value="filename">파일명 (문서번호)</option><option value="date">스캔 일자</option><option value="seq">일련번호</option><option value="none">없음</option></select>
+                    <input type="text" id="cfg_txt_L_val" class="form-control" style="display:none; margin-top:5px;" oninput="app.updatePreview()">
+                </div>
+                
+                <div class="text-config-box">
+                    <div class="text-config-header" style="color:var(--primary); font-weight:bold; margin-bottom:5px;">[중앙] 생산 정보</div>
+                    <select id="cfg_txt_C_type" class="form-control" onchange="app.updatePreview()"><option value="custom">기관명 직접입력</option><option value="date">생산 일자</option><option value="none">없음</option></select>
+                    <input type="text" id="cfg_txt_C_val" class="form-control" style="margin-top:5px;" value="OO시청 기록관" oninput="app.updatePreview()">
+                </div>
+                
+                <div class="text-config-box">
+                    <div class="text-config-header" style="color:var(--primary); font-weight:bold; margin-bottom:5px;">[우측] 쪽수/보안</div>
+                    <select id="cfg_txt_R_type" class="form-control" onchange="app.updatePreview()"><option value="seq">일련번호 (Page)</option><option value="custom">보안등급</option><option value="none">없음</option></select>
+                    <input type="text" id="cfg_txt_R_val" class="form-control" style="display:none; margin-top:5px;" oninput="app.updatePreview()">
+                </div>
+            </div>
+
+            <div class="form-group" style="margin-top:20px;">
+                <button class="btn btn-primary" style="width:100%; padding:12px;" onclick="app.startBatchConvert()">
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    일괄 변환 및 PC 저장
+                </button>
+                <div style="font-size:10px; color:var(--text-sub); text-align:center; margin-top:5px;">* 수천 장의 이미지를 표준 포맷으로 자동 변환합니다.</div>
+            </div>
+        </div>
+
+        <div id="tab-integrity" class="tab-content">
+            <div style="margin-bottom:15px; padding:10px; background:rgba(220,53,69,0.05); border:1px solid rgba(220,53,69,0.1); border-radius:6px;">
+                 <h4 style="margin:0 0 5px 0; font-size:12px; color:#dc3545;">무결성(Integrity) 검증</h4>
+                 <p style="margin:0; font-size:11px; color:var(--text-sub);">
+                     원본 스캔 파일과 변환된 파일의 해시값(SHA-256)을 관리하여, 데이터의 위변조 여부를 기술적으로 증명합니다.
+                 </p>
+            </div>
+            <button class="btn btn-glass" style="width:100%; margin-bottom:10px;" onclick="app.createSnapshot()">1. 기준 데이터 생성 (해시 추출)</button>
+            <button class="btn btn-danger" style="width:100%; margin-bottom:15px;" onclick="document.getElementById('verifyInput').click()">2. 위변조 검증 수행</button>
+            <input type="file" id="verifyInput" accept=".csv" style="display:none" onchange="app.verifyIntegrity(this.files[0])">
+            <div id="verifyResult" style="display:none; padding:10px; background:rgba(0,0,0,0.05); border-radius:6px;">
+                <div>정상(원본유지): <b id="cnt_normal" style="color:#198754">0</b></div>
+                <div>변조(위험): <b id="cnt_changed" style="color:#dc3545">0</b></div>
+                <div>신규: <b id="cnt_new" style="color:#ffc107">0</b></div>
+                <div>삭제: <b id="cnt_deleted" style="color:#fd7e14">0</b></div>
+                <button class="btn btn-glass" style="width:100%; margin-top:10px;" onclick="app.downloadVerifyReport()">검증 리포트 다운로드</button>
+            </div>
+        </div>
+    </div>
+</main>
+
+<nav class="mobile-nav">
+    <div class="nav-item active" onclick="app.mobileNav('list', this)"><svg class="icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>파일목록</div>
+    <div class="nav-item" onclick="app.mobileNav('preview', this)"><svg class="icon" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>미리보기</div>
+    <div class="nav-item" onclick="app.mobileNav('settings', this)"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>설정</div>
+</nav>
+
+<div class="overlay" id="loadingOverlay"><div class="spinner"></div><div id="loadingMsg" style="margin-top:10px;">처리 중...</div></div>
+
+<script>
+const app = {
+    state: { files: [], selectedId: null, rotation: 0, verifyResultList: [], theme: 'naver' },
+    init: () => {
+        app.loadPreset();
+        const area = document.getElementById('fileListArea');
+        area.addEventListener('dragover', e => e.preventDefault());
+        area.addEventListener('drop', e => { e.preventDefault(); app.handleFiles(e.dataTransfer.files); });
+    },
+    setTheme: (t) => { app.state.theme = t; document.documentElement.setAttribute('data-theme', t); },
+    mobileNav: (viewName, el) => {
+        document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active')); el.classList.add('active');
+        document.querySelectorAll('.panel-left, .panel-center, .panel-right').forEach(p => p.classList.remove('mobile-active'));
+        document.getElementById(`view-${viewName}`).classList.add('mobile-active');
+    },
+    handleFiles: async (fileList) => {
+        app.showLoading(true);
+        const newFiles = Array.from(fileList).filter(f => f.type.startsWith('image/')).map(f => ({ id: Math.random().toString(36).substr(2,9), file: f, name: f.name, size: f.size, status: 'wait' }));
+        app.state.files.push(...newFiles);
+        const area = document.getElementById('fileListArea');
+        if(area.innerHTML.includes('폴더 열기')) area.innerHTML = '';
+        newFiles.forEach(f => {
+            const div = document.createElement('div'); div.className = 'file-item'; div.dataset.id = f.id; div.onclick = () => app.selectFile(f.id);
+            div.innerHTML = `<span style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.name}</span><div id="badge_${f.id}"></div>`;
+            area.appendChild(div);
+        });
+        document.getElementById('fileCount').innerText = `파일 ${app.state.files.length}개`;
+        if(!app.state.selectedId && app.state.files.length>0) app.selectFile(app.state.files[0].id);
+        app.showLoading(false);
+    },
+    selectFile: async (id) => {
+        if(app.state.selectedId) document.querySelector(`.file-item[data-id="${app.state.selectedId}"]`)?.classList.remove('selected');
+        app.state.selectedId = id;
+        document.querySelector(`.file-item[data-id="${id}"]`)?.classList.add('selected');
+        const f = app.state.files.find(x => x.id === id);
+        if(f && !f.dims) { const img = await app.loadImage(f.file); f.dims = { w: img.width, h: img.height }; }
+        app.updatePreview();
+        if(window.innerWidth <= 768) app.mobileNav('preview', document.querySelectorAll('.nav-item')[1]);
+    },
+    clearAll: () => {
+        app.state.files = []; app.state.selectedId = null;
+        document.getElementById('fileListArea').innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-sub);">폴더를 열어 기록물 이미지를 추가하세요.</div>';
+        document.getElementById('fileCount').innerText = '파일 0개';
+        const ctx = document.getElementById('previewCanvas').getContext('2d'); ctx.clearRect(0,0,ctx.canvas.width,ctx.canvas.height);
+        document.getElementById('previewInfo').innerText = '준비됨';
+    },
+    loadImage: (src) => new Promise((res, rej) => { const img = new Image(); img.onload = () => res(img); img.onerror = rej; img.src = (typeof src === 'string') ? src : URL.createObjectURL(src); }),
+    getDPI: () => { const sel = document.getElementById('cfg_dpi_select').value; return (sel === 'custom') ? Number(document.getElementById('cfg_dpi_custom').value) : Number(sel); },
+    toggleCustomDPI: () => {
+        const isCustom = document.getElementById('cfg_dpi_select').value === 'custom';
+        document.getElementById('cfg_dpi_custom').style.display = isCustom ? 'block' : 'none';
+        ['L','C','R'].forEach(pos => { const type = document.getElementById(`cfg_txt_${pos}_type`).value; document.getElementById(`cfg_txt_${pos}_val`).style.display = (type === 'custom') ? 'block' : 'none'; });
+    },
+    rotate: (deg) => { app.state.rotation = (app.state.rotation + deg) % 360; app.updatePreview(); },
+    renderToCanvas: async (canvas, fileObj, isThumb) => {
+        const ctx = canvas.getContext('2d');
+        const dpi = app.getDPI();
+        const paperMap = { 'A4':[210,297], 'A3':[297,420], 'B4':[250,353] };
+        const [mmW, mmH] = paperMap[document.getElementById('cfg_paper').value] || [210,297];
+        const pxW = Math.floor(mmW/25.4*dpi), pxH = Math.floor(mmH/25.4*dpi);
+        canvas.width = pxW; canvas.height = pxH;
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,pxW,pxH);
+
+        const img = await app.loadImage(fileObj.file);
+        const padBotPct = document.getElementById('cfg_padBot').value;
+        const textAreaH = pxH * (padBotPct / 100), imgAreaH = pxH - textAreaH;
+
+        // [New] Size & Align
+        const scalePct = document.getElementById('cfg_img_scale').value;
+        const alignH = document.getElementById('cfg_align_h').value;
+        const alignV = document.getElementById('cfg_align_v').value;
+
+        // Bounding Box Calculation
+        const isRotated = Math.abs(app.state.rotation)%180 === 90;
+        const srcW = isRotated ? img.height : img.width;
+        const srcH = isRotated ? img.width : img.height;
+        const fitScale = Math.min(pxW / srcW, imgAreaH / srcH);
+        
+        // Apply User Scale
+        const finalScale = fitScale * (scalePct / 100);
+        const drawW = srcW * finalScale;
+        const drawH = srcH * finalScale;
+
+        // Determine Position
+        let posX = 0, posY = 0;
+        if(alignH === 'center') posX = (pxW - drawW) / 2;
+        else if(alignH === 'right') posX = pxW - drawW;
+        
+        if(alignV === 'middle') posY = (imgAreaH - drawH) / 2;
+        else if(alignV === 'bottom') posY = imgAreaH - drawH;
+
+        ctx.save();
+        const centerX = posX + drawW/2;
+        const centerY = posY + drawH/2;
+        ctx.translate(centerX, centerY);
+        ctx.rotate(app.state.rotation * Math.PI / 180);
+        
+        // No heavy filters for archival purposes (preservation quality)
+        
+        const renderW = isRotated ? drawH : drawW;
+        const renderH = isRotated ? drawW : drawH;
+        ctx.drawImage(img, -renderW/2, -renderH/2, renderW, renderH);
+        ctx.restore();
+
+        if(padBotPct > 0) {
+            ctx.strokeStyle = '#ccc'; ctx.lineWidth = Math.max(1, dpi/150);
+            ctx.beginPath(); ctx.moveTo(0, imgAreaH); ctx.lineTo(pxW, imgAreaH); ctx.stroke();
+            const fontSize = Math.max(12, pxW/50); // Slightly smaller font for metadata
+            ctx.font = `500 ${fontSize}px "Malgun Gothic", sans-serif`;
+            ctx.fillStyle = '#000'; ctx.textBaseline = 'middle';
+            const baseY = imgAreaH + (textAreaH/2), margin = pxW * 0.05;
+            const drawTxt = (pos, align, baseX) => {
+                const type = document.getElementById(`cfg_txt_${pos}_type`).value;
+                if(type === 'none') return;
+                let text = '';
+                if(type === 'filename') text = fileObj.name;
+                else if(type === 'date') text = new Date(fileObj.file.lastModified).toISOString().slice(0,10);
+                else if(type === 'seq') {
+                    const idx = app.state.files.indexOf(fileObj);
+                    text = String(1 + idx).padStart(4, '0');
+                } else if(type === 'custom') text = document.getElementById(`cfg_txt_${pos}_val`).value;
+                
+                // Add static offsets for simplicity in this demo
+                ctx.textAlign = align; ctx.fillText(text, baseX, baseY);
+            };
+            drawTxt('L', 'left', margin); drawTxt('C', 'center', pxW/2); drawTxt('R', 'right', pxW - margin);
+        }
+        if(isThumb) {
+            document.getElementById('previewInfo').innerText = `${pxW}x${pxH}px / ${dpi}DPI (기록물 보존 표준)`;
+            document.getElementById('val_padBot').innerText = padBotPct+'%';
+            document.getElementById('val_img_scale').innerText = scalePct+'%';
+            ['L','C','R'].forEach(p => app.toggleCustomDPI());
+        }
+    },
+    updatePreview: async () => {
+        if(!app.state.selectedId) return;
+        const f = app.state.files.find(x => x.id === app.state.selectedId);
+        await app.renderToCanvas(document.getElementById('previewCanvas'), f, true);
+    },
+    saveCurrentPreview: () => {
+        document.getElementById('previewCanvas').toBlob(blob => {
+            const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `Preservation_${Date.now()}.jpg`; link.click();
+        }, 'image/jpeg', 0.95);
+    },
+    startBatchConvert: async () => {
+        if(app.state.files.length === 0) return alert('파일이 없습니다.');
+        if(!window.showDirectoryPicker) return alert('모바일에서는 폴더 저장을 지원하지 않습니다. 컷별 저장을 이용해주세요.');
+        try {
+            const handle = await window.showDirectoryPicker();
+            const resultDir = await handle.getDirectoryHandle('Converted_Microfilm', {create:true});
+            app.showLoading(true); const canvas = document.createElement('canvas');
+            for(let i=0; i<app.state.files.length; i++) {
+                await app.renderToCanvas(canvas, app.state.files[i], false);
+                const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.95));
+                const fh = await resultDir.getFileHandle(`MF_${app.state.files[i].name.replace(/\..+$/, "")}.jpg`, {create:true});
+                const wr = await fh.createWritable(); await wr.write(blob); await wr.close();
+                document.getElementById(`badge_${app.state.files[i].id}`).className = 'badge st-normal'; document.getElementById(`badge_${app.state.files[i].id}`).innerText = '완료';
+            }
+            app.showLoading(false); alert('변환이 완료되었습니다. 마이크로필름 출력용 폴더를 확인하세요.');
+        } catch(e) { app.showLoading(false); alert('오류 발생: ' + e.message); }
+    },
+    calculateHash: async (file) => { const b = await file.arrayBuffer(); const h = await crypto.subtle.digest('SHA-256', b); return Array.from(new Uint8Array(h)).map(x => x.toString(16).padStart(2,'0')).join(''); },
+    createSnapshot: async () => {
+        if(app.state.files.length===0) return alert('파일 없음'); app.showLoading(true);
+        let csv = "\uFEFF파일명,크기,SHA-256\n"; for(const f of app.state.files) csv += `${f.name},${f.size},${await app.calculateHash(f.file)}\n`;
+        app.showLoading(false); const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'})); a.download = `Hash_Snapshot_${new Date().toISOString().slice(0,10)}.csv`; a.click();
+    },
+    verifyIntegrity: (file) => {
+        if(!file) return; const r = new FileReader();
+        r.onload = async (e) => {
+            const map = new Map(); e.target.result.split('\n').slice(1).forEach(l => { const c = l.split(','); if(c.length>=3) map.set(c[0], c[2].trim()); });
+            let s = {ok:0, ch:0, new:0, del:0}; app.state.verifyResultList = [];
+            for(const f of app.state.files) {
+                app.showLoading(true); const h = await app.calculateHash(f.file); let st = 'new'; if(map.has(f.name)) st = (map.get(f.name)===h)?'normal':'changed';
+                s[st==='normal'?'ok':(st==='changed'?'ch':'new')]++; document.getElementById(`badge_${f.id}`).className = `badge st-${st}`; app.state.verifyResultList.push({name:f.name, status:st});
+            }
+            app.showLoading(false); document.getElementById('verifyResult').style.display = 'block';
+            document.getElementById('cnt_normal').innerText = s.ok; document.getElementById('cnt_changed').innerText = s.ch; document.getElementById('cnt_new').innerText = s.new;
+        }; r.readAsText(file);
+    },
+    downloadVerifyReport: () => { let csv = "\uFEFF상태,파일명\n"; app.state.verifyResultList.forEach(r => csv += `${r.status},${r.name}\n`); const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'})); a.download = `Verify_Report.csv`; a.click(); },
+    switchSettingTab: (id) => { document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active')); document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active')); document.querySelector(`.tab-btn[onclick*="${id}"]`).classList.add('active'); document.getElementById(`tab-${id}`).classList.add('active'); },
+    loadPreset: () => {
+        // 기본값 로드 (기록관리 최적화)
+        document.getElementById('cfg_paper').value = 'A4';
+        document.getElementById('cfg_dpi_select').value = '300';
+        document.getElementById('cfg_padBot').value = '10';
+        app.toggleCustomDPI();
+    },
+    showLoading: (on) => document.getElementById('loadingOverlay').style.display = on?'flex':'none'
+};
+window.onload = app.init;
+</script>
+</body>
+</html>

@@ -1,5 +1,5 @@
 {
-  "name": "image-ocr",
+  "name": "arms:-intelligent-archives-solution",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -9,12 +9,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "lucide-react": "^0.562.0",
     "react-dom": "^19.2.3",
-    "react": "^19.2.3",
-    "@google/genai": "latest",
-    "tesseract.js": "5.1.0",
-    "react-cropper": "2.3.3",
-    "cropperjs": "1.5.13"
+    "react-router-dom": "^7.11.0",
+    "react": "^19.2.3"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
